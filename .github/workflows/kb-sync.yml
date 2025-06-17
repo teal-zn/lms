@@ -1,8 +1,13 @@
 name: Sync Docs → Vertex AI
 
 on:
+  # 手動トリガーを追加
+  workflow_dispatch:
+
+  # push でも起動（任意で残す）
   push:
-    paths: ["docs/*.md"]   # /docs 配下の .md を push したら起動
+    paths:
+      - 'docs/**.md'
 
 jobs:
   upload:
