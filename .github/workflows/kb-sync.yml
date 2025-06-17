@@ -1,0 +1,27 @@
+name: Sync Docs → Vertex AI
+
+on:
+  push:
+    paths: ["docs/*.md"]   # /docs 配下の .md を push したら起動
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read       # コードを読むだけ
+    steps:
+      - uses: actions/checkout@v4   # 1) リポジトリを取得
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Upload markdown to Vertex AI Search
+        run: |
+          python -m pip install --no-cache-dir --upgrade vertexai-search-cli==0.5.*
+          echo "${{ secrets.GCP_SA_KEY }}" > sa.json
+          export GOOGLE_APPLICATION_CREDENTIALS=$PWD/sa.json
+          vertexai-search sync ./docs \
+            --datastore "${{ secrets.DATASTORE_ID }}" \
+            --gcp_project "${{ secrets.GCP_PROJECT_ID }}"
