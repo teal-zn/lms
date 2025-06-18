@@ -1,13 +1,46 @@
-- name: Import to Vertex AI Search
-  run: |
-    ACCESS_TOKEN=$(gcloud auth print-access-token)
-    curl -s -f -X POST \
-      -H "Authorization: Bearer ${ACCESS_TOKEN}" \
-      -H "Content-Type: application/json" \
-      "https://discoveryengine.googleapis.com/v1/projects/${{ secrets.GCP_PROJECT_ID }}/locations/global/collections/default_collection/dataStores/${{ secrets.DATASTORE_ID }}/branches/default_branch:importDocuments" \
-      -d '{
-            "gcsSource": {
-              "inputUris": [ "gs://${{ secrets.GCS_BUCKET }}/docs/*.md" ]
-            },
-            "autoGenerateIds": true
-          }'
+name: Sync Docs → Vertex AI
+
+on:
+  workflow_dispatch:          # 手動実行ボタン
+  push:                       # /docs に .md を push したら自動実行
+    paths:
+      - "docs/**.md"
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+    # 1) リポジトリ取得
+    - uses: actions/checkout@v4
+
+    # 2) GCP 認証
+    - uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+    # 3) gcloud / gsutil セットアップ
+    - uses: google-github-actions/setup-gcloud@v2
+      with:
+        project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+    # 4) GCS バケットへ同期
+    - name: Upload markdown to GCS
+      run: |
+        gsutil -m rsync -r docs "gs://${{ secrets.GCS_BUCKET }}/docs"
+
+    # 5) Vertex AI Search へ取り込み（REST API）
+    - name: Import into Vertex AI Search
+      run: |
+        ACCESS_TOKEN=$(gcloud auth print-access-token)
+        curl -sSf -X POST \
+          -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+          -H "Content-Type: application/json" \
+          "https://discoveryengine.googleapis.com/v1/projects/${{ secrets.GCP_PROJECT_ID }}/locations/global/collections/default_collection/dataStores/${{ secrets.DATASTORE_ID }}/branches/default_branch:importDocuments" \
+          -d '{
+                "gcsSource": {
+                  "inputUris": ["gs://${{ secrets.GCS_BUCKET }}/docs/*.md"]
+                },
+                "autoGenerateIds": true
+              }'
