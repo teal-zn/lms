@@ -1,38 +1,47 @@
-name: Sync Docs → Vertex AI (safe)
+name: Sync Docs → Vertex AI          # ← 1 行目
 
-on:
-  workflow_dispatch:
-  push:
+on:                                  # ---- トリガー設定 ----
+  workflow_dispatch:                 # ❶ 手動ボタン
+  push:                              # ❷ /docs 内の .md を push した時
     paths:
-      - '**.md'          # ルートの md でも起動
+      - "docs/**.md"
 
 jobs:
   upload:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      # 1) リポジトリを取得
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      # === 認証 & gcloud ===
-      - uses: google-github-actions/auth@v2
-        with: {credentials_json: ${{ secrets.GCP_SA_KEY }}}
+      # 2) GCP 認証（サービスアカウント JSON は Secrets に保存済み）
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
 
-      - uses: google-github-actions/setup-gcloud@v2
-        with: {project_id: ${{ secrets.GCP_PROJECT_ID }}}
+      # 3) gcloud & gsutil をセットアップ
+      - name: Set up gcloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
 
-      # === 必ず docs/ に MD が存在するよう保証 ===
+      # 4) docs フォルダを必ず作成し、Markdown を移動
       - name: Prepare docs directory
         run: |
           mkdir -p docs
           find . -maxdepth 1 -name '*.md' -exec mv -t docs {} +
-          echo "Local docs now:" && ls -l docs
+          echo "Files in docs/:"
+          ls -l docs
 
-      # === GCS に同期 ===
+      # 5) GCS バケットに同期
       - name: Upload to GCS
         run: |
           gsutil -m rsync -r docs gs://${{ secrets.GCS_BUCKET }}/docs
 
-      # === REST API で取り込み ===
-      - name: Import to Vertex AI Search
+      # 6) Vertex AI Search に取り込み（REST API）
+      - name: Import into Vertex AI Search
         run: |
           ACCESS_TOKEN=$(gcloud auth print-access-token)
           curl -s -X POST \
