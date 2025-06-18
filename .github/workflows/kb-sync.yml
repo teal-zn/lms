@@ -1,57 +1,13 @@
-name: Sync Docs → Vertex AI          # ← 1 行目
-
-on:                                  # ---- トリガー設定 ----
-  workflow_dispatch:                 # ❶ 手動ボタン
-  push:                              # ❷ /docs 内の .md を push した時
-    paths:
-      - "docs/**.md"
-
-jobs:
-  upload:
-    runs-on: ubuntu-latest
-
-    steps:
-      # 1) リポジトリを取得
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      # 2) GCP 認証（サービスアカウント JSON は Secrets に保存済み）
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
-        with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
-
-      # 3) gcloud & gsutil をセットアップ
-      - name: Set up gcloud CLI
-        uses: google-github-actions/setup-gcloud@v2
-        with:
-          project_id: ${{ secrets.GCP_PROJECT_ID }}
-
-      # 4) docs フォルダを必ず作成し、Markdown を移動
-      - name: Prepare docs directory
-        run: |
-          mkdir -p docs
-          find . -maxdepth 1 -name '*.md' -exec mv -t docs {} +
-          echo "Files in docs/:"
-          ls -l docs
-
-      # 5) GCS バケットに同期
-      - name: Upload to GCS
-        run: |
-          gsutil -m rsync -r docs gs://${{ secrets.GCS_BUCKET }}/docs
-
-      # 6) Vertex AI Search に取り込み（REST API）
-      - name: Import into Vertex AI Search
-        run: |
-          ACCESS_TOKEN=$(gcloud auth print-access-token)
-          curl -s -X POST \
-            -H "Authorization: Bearer ${ACCESS_TOKEN}" \
-            -H "Content-Type: application/json" \
-            "https://discoveryengine.googleapis.com/v1/projects/${{ secrets.GCP_PROJECT_ID }}/locations/global/dataStores/${{ secrets.DATASTORE_ID }}/branches/default_branch:importDocuments" \
-            -d '{
-                  "gcsSource": {
-                    "inputUris": ["gs://${{ secrets.GCS_BUCKET }}/docs/*.md"]
-                  },
-                  "autoGenerateIds": true
-                }' \
-            | jq .
+- name: Import to Vertex AI Search
+  run: |
+    ACCESS_TOKEN=$(gcloud auth print-access-token)
+    curl -s -f -X POST \
+      -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+      -H "Content-Type: application/json" \
+      "https://discoveryengine.googleapis.com/v1/projects/${{ secrets.GCP_PROJECT_ID }}/locations/global/collections/default_collection/dataStores/${{ secrets.DATASTORE_ID }}/branches/default_branch:importDocuments" \
+      -d '{
+            "gcsSource": {
+              "inputUris": [ "gs://${{ secrets.GCS_BUCKET }}/docs/*.md" ]
+            },
+            "autoGenerateIds": true
+          }'
