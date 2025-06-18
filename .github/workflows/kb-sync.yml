@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - 'docs/**.md'
+      - '*.md'
 
 jobs:
   upload:
@@ -29,7 +29,7 @@ jobs:
       # 4) Markdown → GCS
       - name: Copy docs to GCS
         run: |
-          gsutil -m rsync -r docs gs://${{ secrets.GCS_BUCKET }}/docs
+          gsutil -m rsync -r . gs://${{ secrets.GCS_BUCKET }}/docs
 
       # 5) GCS → Vertex AI Search
       - name: Import into Vertex AI Search
