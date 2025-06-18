@@ -1,54 +1,68 @@
 name: Sync Docs → Vertex AI
 
+# ─────────────────────────────────────────
+# ❶ トリガー
+#   • 手動実行 (workflow_dispatch)
+#   • /docs フォルダ直下の .md を push したとき
+# ─────────────────────────────────────────
 on:
   workflow_dispatch:
   push:
     paths:
-      - "**.md"            # ルート直下の .md でもトリガー
+      - "docs/**.md"
 
+# ─────────────────────────────────────────
+# ❷ ジョブ定義
+# ─────────────────────────────────────────
 jobs:
   upload:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
+    env:
+      # ロケーションを Secrets に入れた場合は下行を書き換え
+      LOCATION: ${{ secrets.LOCATION || 'global' }}
+
     steps:
     # 1) リポジトリ取得
-    - uses: actions/checkout@v4
+    - name: Checkout
+      uses: actions/checkout@v4
 
-    # 2) GCP 認証
-    - uses: google-github-actions/auth@v2
+    # 2) GCP 認証（サービスアカウント JSON）
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
       with:
         credentials_json: ${{ secrets.GCP_SA_KEY }}
 
     # 3) gcloud / gsutil セットアップ
-    - uses: google-github-actions/setup-gcloud@v2
+    - name: Set up gcloud CLI
+      uses: google-github-actions/setup-gcloud@v2
       with:
         project_id: ${{ secrets.GCP_PROJECT_ID }}
 
-    # 4) docs/ フォルダを必ず作成し、.md を移動
+    # 4) docs/ フォルダを強制的に作成し、ルートの .md を集約
     - name: Ensure docs/ exists
       run: |
         mkdir -p docs
-        # ルート直下 *.md を docs/ に集約（既にあるものは上書きしない）
         for f in *.md; do
           [ -e "$f" ] && mv -f "$f" docs/ || true
         done
         echo "=== files in docs/ ==="
-        ls -1 docs
+        ls -1 docs || true
 
-    # 5) GCS に同期
-    - name: Upload to GCS
+    # 5) GCS バケットへ同期
+    - name: Upload markdown to GCS
       run: |
         gsutil -m rsync -r docs gs://${{ secrets.GCS_BUCKET }}/docs
 
-    # 6) Vertex AI Search へ取り込み（REST API）
+    # 6) Vertex AI Search にインポート（REST API）
     - name: Import into Vertex AI Search
       run: |
         ACCESS_TOKEN=$(gcloud auth print-access-token)
         curl -sSf -X POST \
           -H "Authorization: Bearer ${ACCESS_TOKEN}" \
           -H "Content-Type: application/json" \
-          "https://discoveryengine.googleapis.com/v1/projects/${{ secrets.GCP_PROJECT_ID }}/locations/global/collections/default_collection/dataStores/${{ secrets.DATASTORE_ID }}/branches/default_branch:importDocuments" \
+          "https://discoveryengine.googleapis.com/v1/projects/${{ secrets.GCP_PROJECT_ID }}/locations/${{ env.LOCATION }}/collections/default_collection/dataStores/${{ secrets.DATASTORE_ID }}/branches/default_branch/documents:import" \
           -d '{
                 "gcsSource": {
                   "inputUris": ["gs://${{ secrets.GCS_BUCKET }}/docs/*.md"]
