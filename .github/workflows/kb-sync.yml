@@ -1,10 +1,10 @@
 name: Sync Docs → Vertex AI
 
 on:
-  workflow_dispatch:          # 手動実行ボタン
-  push:                       # /docs に .md を push したら自動実行
+  workflow_dispatch:
+  push:
     paths:
-      - "docs/**.md"
+      - "**.md"            # ルート直下の .md でもトリガー
 
 jobs:
   upload:
@@ -25,12 +25,23 @@ jobs:
       with:
         project_id: ${{ secrets.GCP_PROJECT_ID }}
 
-    # 4) GCS バケットへ同期
-    - name: Upload markdown to GCS
+    # 4) docs/ フォルダを必ず作成し、.md を移動
+    - name: Ensure docs/ exists
       run: |
-        gsutil -m rsync -r docs "gs://${{ secrets.GCS_BUCKET }}/docs"
+        mkdir -p docs
+        # ルート直下 *.md を docs/ に集約（既にあるものは上書きしない）
+        for f in *.md; do
+          [ -e "$f" ] && mv -f "$f" docs/ || true
+        done
+        echo "=== files in docs/ ==="
+        ls -1 docs
 
-    # 5) Vertex AI Search へ取り込み（REST API）
+    # 5) GCS に同期
+    - name: Upload to GCS
+      run: |
+        gsutil -m rsync -r docs gs://${{ secrets.GCS_BUCKET }}/docs
+
+    # 6) Vertex AI Search へ取り込み（REST API）
     - name: Import into Vertex AI Search
       run: |
         ACCESS_TOKEN=$(gcloud auth print-access-token)
