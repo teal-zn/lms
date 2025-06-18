@@ -11,36 +11,32 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1) リポジトリ取得
+      # 1) ソース取得
       - uses: actions/checkout@v4
 
-      # 2) GCP 認証（google-github-actions/auth）
+      # 2) 認証
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
 
-      # 3) gcloud CLI インストール
+      # 3) gcloud CLI (デフォルトで gsutil も入る)
       - uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
-          install_components: 'gcloud.storage gsutil'
+          # install_components 行を削除
 
-      # 4) Markdown → GCS バケットへ同期
+      # 4) Markdown → GCS
       - name: Copy docs to GCS
         run: |
-          gsutil -m rsync -r docs gs://$GCS_BUCKET/docs
-        env:
-          GCS_BUCKET: ${{ secrets.GCS_BUCKET }}
+          gsutil -m rsync -r docs gs://${{ secrets.GCS_BUCKET }}/docs
 
-      # 5) GCS → Vertex AI Search へ取り込み
+      # 5) GCS → Vertex AI Search
       - name: Import into Vertex AI Search
         run: |
           gcloud discoveryengine data-stores import documents \
             --project=${{ secrets.GCP_PROJECT_ID }} \
             --location=global \
             --data-store=${{ secrets.DATASTORE_ID }} \
-            --gcs-source=gs://$GCS_BUCKET/docs/*.md \
+            --gcs-source=gs://${{ secrets.GCS_BUCKET }}/docs/*.md \
             --auto-generate-ids
-        env:
-          GCS_BUCKET: ${{ secrets.GCS_BUCKET }}
