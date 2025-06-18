@@ -34,7 +34,7 @@ jobs:
       # 5) GCS → Vertex AI Search
       - name: Import into Vertex AI Search
         run: |
-          gcloud discoveryengine data-stores import documents \
+          gcloud discovery-engine data-stores import documents \
             --project=${{ secrets.GCP_PROJECT_ID }} \
             --location=global \
             --data-store=${{ secrets.DATASTORE_ID }} \
