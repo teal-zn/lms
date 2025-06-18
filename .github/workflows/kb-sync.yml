@@ -1,41 +1,41 @@
-name: Sync Docs → Vertex AI
+name: Sync Docs → Vertex AI (safe)
 
 on:
   workflow_dispatch:
   push:
     paths:
-      - 'docs/**.md'
+      - '**.md'          # ルートの md でも起動
 
 jobs:
   upload:
     runs-on: ubuntu-latest
-
     steps:
-      # 1) ソース取得
       - uses: actions/checkout@v4
 
-      # 2) 認証
+      # === 認証 & gcloud ===
       - uses: google-github-actions/auth@v2
-        with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
+        with: {credentials_json: ${{ secrets.GCP_SA_KEY }}}
 
-      # 3) gcloud CLI （gsutil 用）
       - uses: google-github-actions/setup-gcloud@v2
-        with:
-          project_id: ${{ secrets.GCP_PROJECT_ID }}
+        with: {project_id: ${{ secrets.GCP_PROJECT_ID }}}
 
-      # 4) Markdown → GCS バケット
-      - name: Copy docs to GCS
+      # === 必ず docs/ に MD が存在するよう保証 ===
+      - name: Prepare docs directory
+        run: |
+          mkdir -p docs
+          find . -maxdepth 1 -name '*.md' -exec mv -t docs {} +
+          echo "Local docs now:" && ls -l docs
+
+      # === GCS に同期 ===
+      - name: Upload to GCS
         run: |
           gsutil -m rsync -r docs gs://${{ secrets.GCS_BUCKET }}/docs
-        env:
-          GCS_BUCKET: ${{ secrets.GCS_BUCKET }}
 
-      # 5) REST API で Vertex AI Search に取り込み
-      - name: Import documents via REST API
+      # === REST API で取り込み ===
+      - name: Import to Vertex AI Search
         run: |
           ACCESS_TOKEN=$(gcloud auth print-access-token)
-          curl -X POST \
+          curl -s -X POST \
             -H "Authorization: Bearer ${ACCESS_TOKEN}" \
             -H "Content-Type: application/json" \
             "https://discoveryengine.googleapis.com/v1/projects/${{ secrets.GCP_PROJECT_ID }}/locations/global/dataStores/${{ secrets.DATASTORE_ID }}/branches/default_branch:importDocuments" \
@@ -44,4 +44,5 @@ jobs:
                     "inputUris": ["gs://${{ secrets.GCS_BUCKET }}/docs/*.md"]
                   },
                   "autoGenerateIds": true
-               }'
+                }' \
+            | jq .
